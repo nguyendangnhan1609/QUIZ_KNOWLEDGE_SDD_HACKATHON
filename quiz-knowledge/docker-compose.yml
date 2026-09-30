@@ -1,0 +1,79 @@
+services:
+  # PostgreSQL Database Service
+  postgres:
+    image: postgres:16-alpine
+    container_name: quiz-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-quizuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-quizpass123}
+      POSTGRES_DB: ${POSTGRES_DB:-quiz_db}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-quizuser} -d ${POSTGRES_DB:-quiz_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - quiz-network
+
+  # Next.js Application Service
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: quiz-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # Database Configuration
+      DATABASE_URL: postgresql://${POSTGRES_USER:-quizuser}:${POSTGRES_PASSWORD:-quizpass123}@postgres:5432/${POSTGRES_DB:-quiz_db}?pgbouncer=true&connection_limit=1
+      DIRECT_URL: postgresql://${POSTGRES_USER:-quizuser}:${POSTGRES_PASSWORD:-quizpass123}@postgres:5432/${POSTGRES_DB:-quiz_db}
+
+      # Node Environment
+      NODE_ENV: ${NODE_ENV:-production}
+
+      # AI Provider Keys (from .env.local or .env.docker)
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+
+      # Supabase Configuration (if using Supabase Storage)
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      SUPABASE_STORAGE_BUCKET: ${SUPABASE_STORAGE_BUCKET:-quiz-assets}
+
+      # Optional: App Configuration
+      PORT: ${PORT:-3000}
+    ports:
+      - "${PORT:-3000}:3000"
+    volumes:
+      # Mount source code for development (optional, comment out for production)
+      # - .:/app
+      # - /app/node_modules
+      - app_logs:/app/.logs
+      - app_uploads:/app/.uploads
+    networks:
+      - quiz-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000', (r) => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  postgres_data:
+    driver: local
+  app_logs:
+    driver: local
+  app_uploads:
+    driver: local
+
+networks:
+  quiz-network:
+    driver: bridge

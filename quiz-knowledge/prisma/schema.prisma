@@ -1,0 +1,143 @@
+// Prisma schema — AI-Driven Knowledge Management & Assessment Platform
+// Phase 1: Complete production data model
+// Using legacy `prisma-client-js` generator for stable URL-based flow
+// Connection URLs managed via prisma.config.ts + environment variables
+
+generator client {
+  provider = "prisma-client-js"
+  engineType = "client"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// === Core Models ===
+
+model Document {
+  id          Int      @id @default(autoincrement())
+  filename    String
+  mimeType    String
+  storagePath String
+  textContent String   @db.Text
+  charCount   Int
+  createdAt   DateTime @default(now())
+
+  quizzes Quiz[]
+
+  @@map("documents")
+}
+
+model Quiz {
+  id                Int      @id @default(autoincrement())
+  documentId        Int
+  sourceDocumentIds Int[]    @default([])
+  publicToken       String   @unique
+  resultsToken      String   @unique
+  questionCount     Int
+  language          String   @default("vi")
+  createdAt         DateTime @default(now())
+
+  document  Document       @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  questions Question[]
+  attempts  Attempt[]
+  sessions  QuizSession[]
+
+  @@index([documentId])
+  @@index([createdAt])
+  @@map("quizzes")
+}
+
+model Question {
+  id          Int    @id @default(autoincrement())
+  quizId      Int
+  text        String @db.Text
+  explanation String @db.Text
+  difficulty  String
+  orderIndex  Int
+
+  quiz           Quiz            @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  options        Option[]
+  attemptAnswers AttemptAnswer[]
+
+  @@index([quizId])
+  @@map("questions")
+}
+
+model Option {
+  id         Int     @id @default(autoincrement())
+  questionId Int
+  text       String  @db.Text
+  isCorrect  Boolean @default(false)
+  orderIndex Int
+
+  question       Question        @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  attemptAnswers AttemptAnswer[]
+
+  @@index([questionId])
+  @@map("options")
+}
+
+model QuizSession {
+  id            String   @id @default(cuid())
+  quizId        Int
+  sessionToken  String   @unique
+  payload       Json
+  createdAt     DateTime @default(now())
+  expiresAt     DateTime
+  completedAt   DateTime?
+
+  quiz        Quiz              @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  submissions QuizSubmission[]
+
+  @@index([quizId])
+  @@index([expiresAt])
+  @@map("quiz_sessions")
+}
+
+model QuizSubmission {
+  id          String   @id @default(cuid())
+  sessionId   String
+  answers     Json
+  score       Int
+  totalQuestions Int
+  submittedAt DateTime @default(now())
+
+  session QuizSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@map("quiz_submissions")
+}
+
+model Attempt {
+  id             Int      @id @default(autoincrement())
+  quizId         Int
+  identifier     String
+  score          Int
+  totalQuestions Int
+  submittedAt    DateTime @default(now())
+
+  quiz    Quiz            @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  answers AttemptAnswer[]
+
+  @@unique([quizId, identifier])
+  @@index([quizId])
+  @@index([submittedAt])
+  @@map("attempts")
+}
+
+model AttemptAnswer {
+  id               Int     @id @default(autoincrement())
+  attemptId        Int
+  questionId       Int
+  selectedOptionId Int?
+  isCorrect        Boolean
+
+  attempt        Attempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  question       Question @relation(fields: [questionId], references: [id])
+  selectedOption Option?  @relation(fields: [selectedOptionId], references: [id])
+
+  @@index([attemptId])
+  @@index([questionId])
+  @@map("attempt_answers")
+}
